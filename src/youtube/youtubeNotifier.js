@@ -37,7 +37,6 @@ async function fetchWithRetry(url) {
     throw new Error('❌ 모든 API 키의 할당량이 초과되었습니다.');
 }
 
-// ✅ JSON 파일 읽기 함수 (에러 방지)
 function readJsonFile(filePath, defaultValue = {}) {
     try {
         if (fs.existsSync(filePath)) {
@@ -49,7 +48,6 @@ function readJsonFile(filePath, defaultValue = {}) {
     return defaultValue;
 }
 
-// ✅ JSON 파일 저장 함수
 function writeJsonFile(filePath, data) {
     try {
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -62,7 +60,6 @@ async function checkLatestVideoAndShorts() {
     try {
         console.log("🔍 유튜브 최신 영상 검사 중...");
 
-        // 🔍 최신 영상 가져오기
         const searchUrl = `https://www.googleapis.com/youtube/v3/search?key={API_KEY}&channelId=${CHANNEL_ID}&part=snippet,id&order=date&maxResults=1`;
         const searchResponse = await fetchWithRetry(searchUrl);
         const video = searchResponse.data.items[0];
@@ -72,7 +69,6 @@ async function checkLatestVideoAndShorts() {
         const videoId = video.id.videoId;
         const videoTitle = video.snippet.title;
 
-        // 📂 이전 영상 ID 불러오기 (중복 알림 방지)
         const prevVideoData = readJsonFile(VIDEO_INFO_PATH, { lastVideoId: null });
         const prevShortsData = readJsonFile(SHORTS_INFO_PATH, { lastShortsId: null });
 
@@ -82,67 +78,52 @@ async function checkLatestVideoAndShorts() {
         }
 
         const getVideoDurationInSeconds = (duration) => {
-            if (!duration) {
-                console.warn("⏳ 영상 길이 정보를 가져오지 못함! 기본적으로 쇼츠로 처리.");
-                return 0; // duration 값이 없으면 쇼츠로 간주
-            }
-        
+            if (!duration) return 0;
             const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
             if (!match) return 0;
-        
             const hours = parseInt(match[1] || "0", 10);
             const minutes = parseInt(match[2] || "0", 10);
             const seconds = parseInt(match[3] || "0", 10);
-        
             return hours * 3600 + minutes * 60 + seconds;
         };
-        
+
         const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?key={API_KEY}&id=${videoId}&part=contentDetails,snippet,liveStreamingDetails`;
         const videoDetailsResponse = await fetchWithRetry(videoDetailsUrl);
         const videoData = videoDetailsResponse.data.items[0];
-        
+
         if (!videoData) return;
-        
-        // 🎬 영상 길이 가져오기
+
+        const isLive = videoData.snippet.liveBroadcastContent === "live" || videoData.liveStreamingDetails;
+        if (isLive) {
+            console.log("⏩ 라이브 스트리밍 영상 감지됨, 알림을 보내지 않습니다.");
+            return;
+        }
+
         const duration = videoData.contentDetails?.duration || "";
         const videoLength = getVideoDurationInSeconds(duration);
         
-        console.log(`⏳ 영상 길이: ${videoLength}초`);
-        
-        // ✅ 쇼츠 감지 조건 수정
-        const isShorts = videoLength === 0 || videoLength <= 180;
-        
+        const isShorts = videoLength <= 180 && (
+            videoData.snippet.title.toLowerCase().includes("#shorts") || 
+            videoData.snippet.description.toLowerCase().includes("#shorts")
+        );
 
         console.log(`🎬 감지된 영상: ${videoTitle} (${videoId})`);
         console.log("⏳ 영상 길이:", videoLength, "초");
 
         if (isShorts) {
             console.log("🚨 쇼츠 영상 감지됨!");
-
-            // 📌 쇼츠 영상 정보 저장 (중복 방지)
             writeJsonFile(SHORTS_INFO_PATH, { lastShortsId: videoId });
-
-            // 🚀 디스코드 알림 전송 (쇼츠)
-            const videoUrl = `https://www.youtube.com/shorts/${videoId}`;
             await axios.post(WEBHOOK_URL, {
-                content: `**しろちゃん【시로챤】 채널에 새로운 쇼츠 영상이 업로드 되었습니다!**\n${videoUrl}`
+                content: `**しろちゃん【시로챤】 채널에 새로운 쇼츠 영상이 업로드 되었습니다!**\nhttps://www.youtube.com/shorts/${videoId}`
             });
-
-            return; // ✅ 일반 영상 처리 방지
+            return;
         }
 
-        // ✅ 일반 영상 처리
         console.log("📢 일반 영상 감지됨!");
-
-        // 📌 일반 영상 정보 저장 (중복 방지)
         writeJsonFile(VIDEO_INFO_PATH, { lastVideoId: videoId });
-
-        // 🚀 디스코드 알림 전송 (일반 영상)
-        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
         await axios.post(WEBHOOK_URL, {
-            content: `**しろちゃん【시로챤】 채널에 새로운 영상이 업로드 되었습니다!**\n**다시보기가 업로드 될 때도 알림이 전송될 수 있습니다**\n${videoUrl}`
+            content: `**しろちゃん【시로챤】 채널에 새로운 영상이 업로드 되었습니다!**\n**다시보기가 업로드 될 때도 알림이 전송될 수 있습니다**\nhttps://www.youtube.com/watch?v=${videoId}`
         });
-
     } catch (error) {
         console.error('❌ 유튜브 영상 확인 중 오류 발생:', error.response?.data || error.message);
     }

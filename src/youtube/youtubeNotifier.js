@@ -111,7 +111,7 @@ async function checkLatestVideoAndShorts() {
 
         console.log("📢 일반 영상 감지됨!");
         writeJsonFile(VIDEO_INFO_PATH, { lastVideoId: videoId });
-        await sendDiscordNotification(`**しろちゃん【시로챤】 채널에 새로운 영상이 업로드 되었습니다!**\n**다시보기가 업로드 될 때도 알림이 전송될 수 있습니다**\nhttps://www.youtube.com/watch?v=${videoId}`);
+        await sendDiscordNotification(`**しろちゃん【시로챤】 채널에 새로운 영상이 업로드 되었습니다!**\nhttps://www.youtube.com/watch?v=${videoId}`);
 
     } catch (error) {
         console.error('❌ 유튜브 영상 확인 중 오류 발생:', error.response?.data || error.message);

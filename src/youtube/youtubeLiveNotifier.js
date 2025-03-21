@@ -56,22 +56,23 @@ function readJsonFile(filePath, defaultValue = {}) {
     }
 }
 
-// 라이브 스트리밍 확인 함수
+// 유튜브 라이브 스트리밍 확인 함수
 async function checkLiveStream() {
     try {
         console.log("🔍 유튜브 라이브 스트리밍 확인 중...");
 
-        // 최신 5개 영상 조회
-        const searchUrl = `https://www.googleapis.com/youtube/v3/search?key={API_KEY}&channelId=${CHANNEL_ID}&part=id,snippet&order=date&type=video&maxResults=5`;
-        const searchResponse = await fetchWithRetry(searchUrl);
+        // 최신 활동 (라이브 포함) 가져오기
+        const activitiesUrl = `https://www.googleapis.com/youtube/v3/activities?key={API_KEY}&channelId=${CHANNEL_ID}&part=contentDetails&maxResults=5`;
+        const activitiesResponse = await fetchWithRetry(activitiesUrl);
 
-        if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
-            console.log("⚠️ 검색된 영상이 없습니다.");
+        if (!activitiesResponse.data.items || activitiesResponse.data.items.length === 0) {
+            console.log("⚠️ 검색된 활동이 없습니다.");
             return;
         }
 
-        for (const video of searchResponse.data.items) {
-            const videoId = video.id.videoId;
+        for (const activity of activitiesResponse.data.items) {
+            const videoId = activity.contentDetails.upload?.videoId;
+            if (!videoId) continue; // 영상이 아니면 무시
 
             // 라이브 여부 확인
             const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?key={API_KEY}&id=${videoId}&part=snippet,liveStreamingDetails`;

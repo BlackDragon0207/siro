@@ -65,6 +65,9 @@ async function checkLiveStream() {
             return;
         }
 
+        let latestLiveId = null;
+        let latestStartTime = null;
+
         for (const activity of activitiesResponse.data.items) {
             const videoId = activity.contentDetails.upload?.videoId;
             if (!videoId) continue;
@@ -81,35 +84,38 @@ async function checkLiveStream() {
             const isLive = videoData.snippet.liveBroadcastContent !== "none" 
                         || videoData.liveStreamingDetails?.actualStartTime;
             const isEndedLive = videoData.liveStreamingDetails?.actualEndTime;
+            const startTime = videoData.liveStreamingDetails?.actualStartTime || null;
 
             console.log(`🎥 영상 확인: ${videoData.snippet.title} | liveBroadcastContent: ${videoData.snippet.liveBroadcastContent}`);
 
-            if (!isLive || isEndedLive) {
-                console.log("📢 현재 진행 중인 라이브가 아닙니다. (또는 다시보기 업로드됨)");
-                continue;
+            if (isLive && !isEndedLive) {
+                latestLiveId = videoId;
+                latestStartTime = startTime;
             }
-
-            const videoTitle = videoData.snippet.title;
-            const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
-            const prevData = readJsonFile(LIVE_INFO_PATH, { lastLiveId: null });
-
-            if (prevData.lastLiveId === videoId) {
-                console.log("⚠️ 이미 알림을 보낸 라이브입니다.");
-                return;
-            }
-
-            fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: videoId }, null, 2));
-
-            console.log(`🔴 라이브 감지됨: ${videoTitle} (${videoUrl})`);
-            await axios.post(WEBHOOK_URL, {
-                content: `🔴 **しろちゃん【시로챤】 채널에서 라이브가 시작되었습니다!**\n${videoUrl}`
-            });
-
-            return;
         }
 
-        console.log("📢 현재 진행 중인 라이브가 없습니다.");
+        const prevData = readJsonFile(LIVE_INFO_PATH, { lastLiveId: null, lastStartTime: null });
+
+        if (latestLiveId) {
+            if (prevData.lastLiveId !== latestLiveId || prevData.lastStartTime !== latestStartTime) {
+                fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: latestLiveId, lastStartTime: latestStartTime }, null, 2));
+
+                console.log(`🔴 새로운 라이브 감지됨: ${latestLiveId}`);
+                const videoUrl = `https://www.youtube.com/watch?v=${latestLiveId}`;
+                await axios.post(WEBHOOK_URL, {
+                    content: `🔴 **しろちゃん【시로챤】 채널에서 새로운 라이브가 시작되었습니다!**\n${videoUrl}`
+                });
+            } else {
+                console.log("⚠️ 이미 알림을 보낸 라이브입니다.");
+            }
+        } else {
+            console.log("📢 현재 진행 중인 라이브가 없습니다.");
+            if (prevData.lastLiveId) {
+                console.log("✅ 라이브가 종료됨을 감지, JSON 초기화.");
+                fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: null, lastStartTime: null }, null, 2));
+            }
+        }
+
     } catch (error) {
         console.error('❌ 유튜브 라이브 확인 중 오류:', error.response?.data || error.message);
         setTimeout(checkLiveStream, 30 * 1000);

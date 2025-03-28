@@ -63,12 +63,15 @@ for (const file of commandFiles) {
 }
 
 
-// security 폴더에서 모든 보안 기능 자동 로드
-const securityPath = path.join(__dirname, "src/security");
-fs.readdirSync(securityPath).forEach(file => {
-    const securityModule = require(`./src/security/${file}`);
-    client.on(securityModule.name, (...args) => securityModule.execute(...args));
-});
+const securityPath = path.join(__dirname, "src", "security");
+const securityFiles = fs.readdirSync(securityPath).filter(file => file.endsWith(".js"));
+
+for (const file of securityFiles) {
+    const securityEvent = require(path.join(securityPath, file));
+    if (securityEvent.name) {
+        client.on(securityEvent.name, (...args) => securityEvent.execute(...args));
+    }
+}
 
 
 // 봇 준비 이벤트

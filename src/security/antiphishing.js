@@ -2,7 +2,6 @@ const { EmbedBuilder } = require("discord.js");
 
 // 피싱 링크를 체크할 때 제외할 도메인 리스트 (정당한 도메인으로 판단되는 링크들)
 const excludedDomains = [
-    "steamcommunity.com",
     "discord.com",
     "google.com",
     "youtube.com"

@@ -57,7 +57,7 @@ async function checkLiveStream() {
     try {
         console.log("🔍 유튜브 라이브 스트리밍 확인 중...");
         
-        const activitiesUrl = `https://www.googleapis.com/youtube/v3/activities?key={API_KEY}&channelId=${CHANNEL_ID}&part=contentDetails&maxResults=5`;
+        const activitiesUrl = `https://www.googleapis.com/youtube/v3/activities?key={API_KEY}&channelId=${CHANNEL_ID}&part=contentDetails&maxResults=1`;
         const activitiesResponse = await fetchWithRetry(activitiesUrl);
 
         if (!activitiesResponse.data.items || activitiesResponse.data.items.length === 0) {
@@ -91,13 +91,15 @@ async function checkLiveStream() {
             if (isLive && !isEndedLive) {
                 latestLiveId = videoId;
                 latestStartTime = startTime;
+                break; // 최신 라이브만 확인하면 되므로 첫 번째 라이브 찾으면 종료
             }
         }
 
         const prevData = readJsonFile(LIVE_INFO_PATH, { lastLiveId: null, lastStartTime: null });
 
         if (latestLiveId) {
-            if (prevData.lastLiveId !== latestLiveId || prevData.lastStartTime !== latestStartTime) {
+            // ✅ `actualStartTime`이 기존 값보다 최신인지 확인
+            if (prevData.lastLiveId !== latestLiveId || new Date(latestStartTime) > new Date(prevData.lastStartTime)) {
                 fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: latestLiveId, lastStartTime: latestStartTime }, null, 2));
 
                 console.log(`🔴 새로운 라이브 감지됨: ${latestLiveId}`);

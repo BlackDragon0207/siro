@@ -56,66 +56,58 @@ function readJsonFile(filePath, defaultValue = {}) {
 async function checkLiveStream() {
     try {
         console.log("🔍 유튜브 라이브 스트리밍 확인 중...");
-        
-        const activitiesUrl = `https://www.googleapis.com/youtube/v3/activities?key={API_KEY}&channelId=${CHANNEL_ID}&part=contentDetails&maxResults=1`;
-        const activitiesResponse = await fetchWithRetry(activitiesUrl);
 
-        if (!activitiesResponse.data.items || activitiesResponse.data.items.length === 0) {
-            console.log("⚠️ 검색된 활동이 없습니다.");
+        // 현재 진행 중인 라이브 검색
+        const searchUrl = `https://www.googleapis.com/youtube/v3/search?key={API_KEY}&channelId=${CHANNEL_ID}&part=id,snippet&eventType=live&type=video&maxResults=1`;
+        const searchResponse = await fetchWithRetry(searchUrl);
+
+        if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
+            console.log("📢 현재 진행 중인 라이브가 없습니다.");
+            const prevData = readJsonFile(LIVE_INFO_PATH, { lastLiveId: null });
+
+            // 기존 라이브가 존재했다면 종료 감지 후 초기화
+            if (prevData.lastLiveId) {
+                console.log("✅ 라이브가 종료됨을 감지, JSON 초기화.");
+                fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: null }, null, 2));
+            }
             return;
         }
 
-        let latestLiveId = null;
-        let latestStartTime = null;
+        // 진행 중인 라이브 정보 가져오기
+        const latestLiveId = searchResponse.data.items[0].id.videoId;
+        const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?key={API_KEY}&id=${latestLiveId}&part=snippet,liveStreamingDetails`;
+        const detailsResponse = await fetchWithRetry(detailsUrl);
 
-        for (const activity of activitiesResponse.data.items) {
-            const videoId = activity.contentDetails.upload?.videoId;
-            if (!videoId) continue;
-
-            const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?key={API_KEY}&id=${videoId}&part=snippet,liveStreamingDetails`;
-            const detailsResponse = await fetchWithRetry(detailsUrl);
-
-            if (!detailsResponse.data.items || detailsResponse.data.items.length === 0) {
-                console.log(`⚠️ 영상 정보를 찾을 수 없음 (videoId: ${videoId})`);
-                continue;
-            }
-
-            const videoData = detailsResponse.data.items[0];
-            const isLive = videoData.snippet.liveBroadcastContent !== "none" 
-                        || videoData.liveStreamingDetails?.actualStartTime;
-            const isEndedLive = videoData.liveStreamingDetails?.actualEndTime;
-            const startTime = videoData.liveStreamingDetails?.actualStartTime || null;
-
-            console.log(`🎥 영상 확인: ${videoData.snippet.title} | liveBroadcastContent: ${videoData.snippet.liveBroadcastContent}`);
-
-            if (isLive && !isEndedLive) {
-                latestLiveId = videoId;
-                latestStartTime = startTime;
-                break; // 최신 라이브만 확인하면 되므로 첫 번째 라이브 찾으면 종료
-            }
+        if (!detailsResponse.data.items || detailsResponse.data.items.length === 0) {
+            console.log(`⚠️ 영상 정보를 찾을 수 없음 (videoId: ${latestLiveId})`);
+            return;
         }
 
-        const prevData = readJsonFile(LIVE_INFO_PATH, { lastLiveId: null, lastStartTime: null });
+        const videoData = detailsResponse.data.items[0];
+        const isLive = videoData.snippet.liveBroadcastContent !== "none" 
+                    || videoData.liveStreamingDetails?.actualStartTime;
+        const isEndedLive = videoData.liveStreamingDetails?.actualEndTime;
+        const startTime = videoData.liveStreamingDetails?.actualStartTime || null;
 
-        if (latestLiveId) {
-            // ✅ `actualStartTime`이 기존 값보다 최신인지 확인
-            if (prevData.lastLiveId !== latestLiveId || new Date(latestStartTime) > new Date(prevData.lastStartTime)) {
-                fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: latestLiveId, lastStartTime: latestStartTime }, null, 2));
+        console.log(`🎥 라이브 확인: ${videoData.snippet.title} | liveBroadcastContent: ${videoData.snippet.liveBroadcastContent}`);
 
-                console.log(`🔴 새로운 라이브 감지됨: ${latestLiveId}`);
-                const videoUrl = `https://www.youtube.com/watch?v=${latestLiveId}`;
-                await axios.post(WEBHOOK_URL, {
-                    content: `🔴 **しろちゃん【시로챤】 채널에서 새로운 라이브가 시작되었습니다!**\n${videoUrl}`
-                });
-            } else {
-                console.log("⚠️ 이미 알림을 보낸 라이브입니다.");
-            }
-        } else {
+        if (!isLive || isEndedLive) {
             console.log("📢 현재 진행 중인 라이브가 없습니다.");
-            if (prevData.lastLiveId) {
-                console.log("✅ 라이브가 종료됨을 감지, JSON 초기화.");
-                fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: null, lastStartTime: null }, null, 2));
-            }
+            return;
+        }
+
+        const prevData = readJsonFile(LIVE_INFO_PATH, { lastLiveId: null });
+
+        if (prevData.lastLiveId !== latestLiveId) {
+            fs.writeFileSync(LIVE_INFO_PATH, JSON.stringify({ lastLiveId: latestLiveId }, null, 2));
+
+            console.log(`🔴 새로운 라이브 감지됨: ${latestLiveId}`);
+            const videoUrl = `https://www.youtube.com/watch?v=${latestLiveId}`;
+            await axios.post(WEBHOOK_URL, {
+                content: `🔴 **しろちゃん【시로챤】 채널에서 새로운 라이브가 시작되었습니다!**\n${videoUrl}`
+            });
+        } else {
+            console.log("⚠️ 이미 알림을 보낸 라이브입니다.");
         }
 
     } catch (error) {
